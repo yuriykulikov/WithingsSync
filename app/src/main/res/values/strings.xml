@@ -3,4 +3,5 @@
     <string name="error_android_permissions">Android permissions failure.</string>
     <string name="error_oauth_permissions">OAuth permissions failure.</string>
     <string name="dialog_bugreport_hint">What happened?</string>
+    <string name="notification_service">Notification Listener Service</string>
 </resources>

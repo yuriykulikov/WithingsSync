@@ -2,21 +2,24 @@ package com.github.yuriykulikov.withingssync
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import com.github.yuriykulikov.withingssync.common.BugReporter
 import com.github.yuriykulikov.withingssync.common.Logger
 import com.github.yuriykulikov.withingssync.common.LoggerFactory
@@ -129,10 +132,47 @@ class MainActivity : ComponentActivity() {
       Text(text = "Sync!")
     }
 
+    val hasNotificationsPermission = rememberNotificationListenerPermissionState()
+
+    Button(
+        onClick = { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
+        enabled = !hasNotificationsPermission.value) { Text(text = "Enable automatic sync") }
+
     Button(
         onClick = { get<BugReporter>().sendUserReport() },
     ) {
       Text(text = "Send bugreport!")
     }
+  }
+
+  @Composable
+  private fun rememberNotificationListenerPermissionState(
+      lifecycleOwner: LifecycleOwner = LocalLifecycleOwner.current
+  ): State<Boolean> {
+    fun hasNotificationListenerPermission() =
+        applicationContext.packageName in
+            Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+
+    val hasNotificationsPermission =
+        remember(lifecycleOwner.lifecycle.currentState) {
+          logger.debug { "hasNotificationsPermission recompose!" }
+          mutableStateOf(hasNotificationListenerPermission())
+        }
+
+    DisposableEffect(lifecycleOwner) {
+      val observer = LifecycleEventObserver { _, event ->
+        if (event == Lifecycle.Event.ON_RESUME) {
+          hasNotificationsPermission.value = hasNotificationListenerPermission()
+        }
+      }
+
+      // Add the observer to the lifecycle
+      lifecycleOwner.lifecycle.addObserver(observer)
+
+      // When the effect leaves the Composition, remove the observer
+      onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    return hasNotificationsPermission
   }
 }
