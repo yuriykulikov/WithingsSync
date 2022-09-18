@@ -1,6 +1,8 @@
 package com.github.yuriykulikov.withingssync
 
 import android.net.Uri
+import androidx.datastore.core.DataStore
+import com.github.yuriykulikov.withingssync.common.Logger
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -14,21 +16,24 @@ import java.time.Instant
 import java.util.*
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.openid.appauth.AuthorizationRequest
 import net.openid.appauth.AuthorizationServiceConfiguration
 import net.openid.appauth.ResponseTypeValues
 
-data class Measure2(
+data class WithingsMeasure(
     val date: Date,
     val weight: Int?,
     val fatRatio: Int?,
 )
 
-data class Tokens2(
-    val access_token: String,
-    val refresh_token: String,
+@Serializable
+data class WithingsTokens(
+    val accessToken: String,
+    val refreshToken: String,
+    val expiresOn: Long = 0,
 )
 
 /**
@@ -36,7 +41,10 @@ data class Tokens2(
  *
  * TODO internalize tokens
  */
-class WithingsAccess {
+class WithingsAccess(
+    val tokenStore: DataStore<WithingsTokens>,
+    val logger: Logger,
+) {
   companion object {
     /**
      * Authorisation request for Withings.
@@ -96,49 +104,67 @@ class WithingsAccess {
   /**
    * [OAuth 2.0 - Get your access_token](https://developer.withings.com/api-reference/#operation/oauth2-authorize)
    */
-  suspend fun requestToken(authorizationCode: String): Tokens2 {
-    return ktor
-        .submitForm(
-            url = "https://wbsapi.withings.net/v2/oauth2",
-            formParameters =
-                Parameters.build {
-                  append("action", "requesttoken")
-                  append("grant_type", "authorization_code")
-                  append("client_id", clientId)
-                  append("client_secret", secret)
-                  append("code", authorizationCode)
-                  append("redirect_uri", redirectUrl)
-                },
-            encodeInQuery = false,
-        )
-        .body<RequestTokenResponse>()
-        .body
-        .let { Tokens2(access_token = it.access_token, refresh_token = it.refresh_token) }
+  suspend fun requestToken(authorizationCode: String) {
+    tokenStore.updateData {
+      ktor
+          .submitForm(
+              url = "https://wbsapi.withings.net/v2/oauth2",
+              formParameters =
+                  Parameters.build {
+                    append("action", "requesttoken")
+                    append("grant_type", "authorization_code")
+                    append("client_id", clientId)
+                    append("client_secret", secret)
+                    append("code", authorizationCode)
+                    append("redirect_uri", redirectUrl)
+                  },
+              encodeInQuery = false,
+          )
+          .body<RequestTokenResponse>()
+          .body
+          .let { tokens ->
+            WithingsTokens(
+                accessToken = tokens.access_token,
+                refreshToken = tokens.refresh_token,
+                expiresOn = Instant.now().epochSecond + tokens.expires_in,
+            )
+          }
+    }
   }
 
   /**
    * [OAuth 2.0 - Refresh your access_token](https://developer.withings.com/api-reference/#operation/oauth2-refreshaccesstoken)
    */
-  suspend fun refreshToken(refresh_token: String): Tokens2 {
-    return ktor
-        .submitForm(
-            url = "https://wbsapi.withings.net/v2/oauth2",
-            formParameters =
-                Parameters.build {
-                  append("action", "requesttoken")
-                  append("grant_type", "refresh_token")
-                  append("client_id", clientId)
-                  append("client_secret", secret)
-                  append("refresh_token", refresh_token)
-                },
-            encodeInQuery = false,
-        )
-        .body<RequestTokenResponse>()
-        .body
-        .let { Tokens2(access_token = it.access_token, refresh_token = it.refresh_token) }
+  suspend fun refreshToken(): WithingsTokens {
+    logger.debug { "Refreshing tokens" }
+    return tokenStore.updateData { prev ->
+      ktor
+          .submitForm(
+              url = "https://wbsapi.withings.net/v2/oauth2",
+              formParameters =
+                  Parameters.build {
+                    append("action", "requesttoken")
+                    append("grant_type", "refresh_token")
+                    append("client_id", clientId)
+                    append("client_secret", secret)
+                    append("refresh_token", prev.refreshToken)
+                  },
+              encodeInQuery = false,
+          )
+          .body<RequestTokenResponse>()
+          .body
+          .let { tokens ->
+            WithingsTokens(
+                accessToken = tokens.access_token,
+                refreshToken = tokens.refresh_token,
+                expiresOn = Instant.now().epochSecond + tokens.expires_in,
+            )
+          }
+    }
   }
 
-  suspend fun getMeasures(access_token: String): List<Measure2> {
+  suspend fun getMeasures(lastupdate: Instant? = null): List<WithingsMeasure> {
+    val accessToken = freshToken()
     return ktor
         .submitForm(
             url = "https://wbsapi.withings.net/measure",
@@ -154,85 +180,97 @@ class WithingsAccess {
                           .toInstant()
                           .epochSecond
                           .toString())
-                  append("enddate", Instant.now().epochSecond.toString())
+                  if (lastupdate != null && lastupdate.epochSecond > 0) {
+                    append("lastupdate", lastupdate.epochSecond.toString())
+                  }
                 },
             encodeInQuery = false,
-        ) {
-          header("Authorization", "Bearer $access_token")
-        }
-        .body<MeasauresResponse>()
-        .body
-        .measuregrps
+            block = { header("Authorization", "Bearer $accessToken") },
+        )
+        .body<WithingsMeasuresResponse>()
+        .let { requireNotNull(it.body?.measuregrps) { "Error response: $it" } }
         .map { group ->
-          Measure2(
+          WithingsMeasure(
               date = Date.from(Instant.ofEpochSecond(group.date)),
               weight = group.measures.firstOrNull { it.type == 1 }?.value,
               fatRatio = group.measures.firstOrNull { it.type == 6 }?.value,
           )
         }
   }
+
+  private suspend fun freshToken(): String {
+    val tokens = tokenStore.data.first()
+    return if (Instant.ofEpochSecond(tokens.expiresOn).isBefore(Instant.now())) {
+      refreshToken().accessToken
+    } else {
+      tokens.accessToken
+    }
+  }
 }
 
 @Serializable
-private data class MeasureGroup(
-    val grpid: Long,
-    val attrib: Int,
-    val date: Long,
-    val created: Long,
-    val modified: Long,
-    val category: Int,
-    val deviceid: String? = null,
-    val hash_deviceid: String? = null,
-    val measures: List<Measure>,
-    val comment: String? = null,
-)
-
-@Serializable
-private data class Measure(
-    val value: Int,
-    val type: Int,
-    val unit: Int,
-    val algo: Int? = null,
-    val fm: Int? = null,
-)
-
-@Serializable
-private data class MeasauresResponse(
+private data class WithingsMeasuresResponse(
     val status: Int,
-    val body: Measures,
-)
+    val body: Body? = null,
+    val error: String? = null,
+) {
 
-@Serializable
-private data class Measures(
-    val updatetime: Long,
-    val timezone: String,
-    val measuregrps: List<MeasureGroup>,
-)
+  @Serializable
+  data class Body(
+      val updatetime: Long,
+      val timezone: String,
+      val measuregrps: List<MeasureGroup>,
+  )
+
+  @Serializable
+  data class MeasureGroup(
+      val grpid: Long,
+      val attrib: Int,
+      val date: Long,
+      val created: Long,
+      val modified: Long,
+      val category: Int,
+      val deviceid: String? = null,
+      val hash_deviceid: String? = null,
+      val measures: List<Measure>,
+      val comment: String? = null,
+  )
+
+  @Serializable
+  data class Measure(
+      val value: Int,
+      val type: Int,
+      val unit: Int,
+      val algo: Int? = null,
+      val fm: Int? = null,
+  )
+}
 
 @Serializable
 private data class RequestTokenResponse(
     val status: Int,
-    val body: Tokens,
-)
-
-@Serializable
-private data class Tokens(
-    val userid: Long,
-    val access_token: String,
-    val refresh_token: String,
-    val expires_in: Int,
-    val scope: String,
-    val csrf_token: String? = null,
-    val token_type: String,
-)
+    val body: Body,
+) {
+  @Serializable
+  data class Body(
+      val userid: Long,
+      val access_token: String,
+      val refresh_token: String,
+      val expires_in: Int,
+      val scope: String,
+      val csrf_token: String? = null,
+      val token_type: String,
+  )
+}
 
 @Serializable
 private data class NonceResponse(
     val status: Int,
-    val body: Nonce,
-)
+    val body: Body,
+) {
 
-@Serializable
-private data class Nonce(
-    val nonce: String,
-)
+  @Serializable
+  data class Body(
+      val nonce: String,
+  )
+}
