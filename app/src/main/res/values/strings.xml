@@ -1,4 +1,6 @@
 <resources>
     <string name="app_name">WithingsSync</string>
+    <string name="error_android_permissions">Android permissions failure.</string>
+    <string name="error_oauth_permissions">OAuth permissions failure.</string>
     <string name="dialog_bugreport_hint">What happened?</string>
 </resources>

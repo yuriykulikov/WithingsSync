@@ -66,6 +66,11 @@ dependencies {
   implementation("io.ktor:ktor-serialization-kotlinx-json:$ktor_version")
   implementation("io.ktor:ktor-client-content-negotiation:$ktor_version")
   implementation("net.openid:appauth:0.11.1")
+  implementation("androidx.core:core-ktx:1.9.0")
+  implementation("androidx.work:work-runtime-ktx:2.7.1")
+  implementation("com.google.android.gms:play-services-auth:20.3.0")
+  implementation("com.google.android.gms:play-services-fitness:21.1.0")
+  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.6.4")
   implementation("androidx.datastore:datastore-preferences:1.0.0")
 
   val koin_version = "3.2.1"

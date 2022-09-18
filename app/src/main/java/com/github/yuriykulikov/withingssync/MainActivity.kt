@@ -1,5 +1,8 @@
 package com.github.yuriykulikov.withingssync
 
+import android.Manifest
+import android.app.Activity
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -8,6 +11,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,6 +65,8 @@ class MainActivity : ComponentActivity() {
   @Composable
   private fun AppContent() {
     val scope = rememberCoroutineScope()
+    val hasPermission = remember { mutableStateOf(isActivityRecognitionPermissionApproved(this)) }
+    val googleSignedIn = remember { mutableStateOf(hasGooglePermission(this)) }
 
     val authLauncher =
         rememberLauncherForActivityResult(
@@ -87,6 +94,40 @@ class MainActivity : ComponentActivity() {
             measures.forEach { logger.debug { " -> $it" } }
           }
         }) { Text(text = "Download data") }
+
+    val permLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+            onResult = { hasPermission.value = it })
+    // TODO if (ActivityCompat.shouldShowRequestPermissionRationale(this,
+    // Manifest.permission.ACTIVITY_RECOGNITION)) show snack
+    Button(
+        onClick = {
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            permLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+          }
+        },
+        enabled = !hasPermission.value,
+    ) {
+      Text(text = "Request permissions")
+    }
+
+    val googleSignInLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+          val connected = it.resultCode == Activity.RESULT_OK
+          googleSignedIn.value = connected
+        }
+
+    Button(
+        onClick = { googleSignInLauncher.launch(googleSingInIntent(this)) },
+        enabled = hasPermission.value && !googleSignedIn.value) { Text(text = "Google sign in") }
+
+    Button(
+        onClick = { enqueueSyncJob(this) },
+        enabled = hasPermission.value && googleSignedIn.value,
+    ) {
+      Text(text = "Sync!")
+    }
 
     Button(
         onClick = { get<BugReporter>().sendUserReport() },

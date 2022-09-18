@@ -49,6 +49,26 @@ class App : Application() {
             }
 
             single { BugReporter(logger("BugReporter"), applicationContext) }
+
+            single {
+              GoogleFit(
+                  historyClient = get(),
+              )
+            }
+
+            single { createHistoryClient(applicationContext) }
+
+            single {
+              Syncer(
+                  lastSyncStore =
+                      DataStoreFactory.create(
+                          serializer = LongSerializer,
+                          produceFile = { dataStoreFile("last_sync_epoch_seconds") },
+                      ),
+                  googleFit = get(),
+                  withingsAccess = get(),
+                  logger = logger("Syncer"))
+            }
           })
     }
 
@@ -107,7 +127,7 @@ object LongSerializer : Serializer<Long> {
 
 @OptIn(ExperimentalSerializationApi::class)
 object TokensSerializer : Serializer<WithingsTokens> {
-  override val defaultValue: WithingsTokens = WithingsTokens("", "", 0)
+  override val defaultValue: WithingsTokens = WithingsTokens("", "")
 
   override suspend fun readFrom(input: InputStream): WithingsTokens =
       Json.decodeFromStream(WithingsTokens.serializer(), input)
