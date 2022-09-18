@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">WithingsSync</string>
+    <string name="dialog_bugreport_hint">What happened?</string>
 </resources>

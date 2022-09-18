@@ -14,11 +14,11 @@ fun localPropertyOrEnv(name: String): String {
 }
 
 android {
-  compileSdk = 32
+  compileSdk = 33
   defaultConfig {
     applicationId = "com.github.yuriykulikov.withingssync"
     minSdk = 28
-    targetSdk = 32
+    targetSdk = 33
     versionCode = 10500
     versionName = "1.5.0"
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -31,12 +31,14 @@ android {
       isMinifyEnabled = false
       buildConfigField("String", "CLIENT_ID", "\"${localPropertyOrEnv("CLIENT_ID")}\"")
       buildConfigField("String", "CLIENT_SECRET", "\"${localPropertyOrEnv("CLIENT_SECRET")}\"")
+      buildConfigField("String", "ACRA_EMAIL", "\"${localPropertyOrEnv("ACRA_EMAIL")}\"")
     }
     getByName("release") {
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android.txt"), "proguard-rules.txt")
       buildConfigField("String", "CLIENT_ID", "\"${localPropertyOrEnv("CLIENT_ID")}\"")
       buildConfigField("String", "CLIENT_SECRET", "\"${localPropertyOrEnv("CLIENT_SECRET")}\"")
+      buildConfigField("String", "ACRA_EMAIL", "\"${localPropertyOrEnv("ACRA_EMAIL")}\"")
     }
   }
 
@@ -64,6 +66,16 @@ dependencies {
   implementation("io.ktor:ktor-serialization-kotlinx-json:$ktor_version")
   implementation("io.ktor:ktor-client-content-negotiation:$ktor_version")
   implementation("net.openid:appauth:0.11.1")
+  implementation("androidx.datastore:datastore-preferences:1.0.0")
+
+  val koin_version = "3.2.1"
+  implementation("io.insert-koin:koin-core:$koin_version")
+  implementation("io.insert-koin:koin-android:$koin_version")
+  implementation("io.insert-koin:koin-androidx-workmanager:$koin_version")
+
+  implementation("org.slf4j:slf4j-api:1.7.36")
+  implementation("com.github.tony19:logback-android:2.0.0")
+  implementation("ch.acra:acra-mail:5.9.3")
 }
 
 dependencies {
