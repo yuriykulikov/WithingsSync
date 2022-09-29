@@ -19,6 +19,7 @@ import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
 import org.koin.android.ext.android.get
 import org.koin.core.context.startKoin
+import org.koin.core.qualifier.named
 import org.koin.core.scope.Scope
 import org.koin.dsl.module
 import org.slf4j.ILoggerFactory
@@ -68,6 +69,13 @@ class App : Application() {
                   googleFit = get(),
                   withingsAccess = get(),
                   logger = logger("Syncer"))
+            }
+
+            single(named("lastSeenNotification")) {
+              DataStoreFactory.create(
+                  serializer = LongSerializer,
+                  produceFile = { dataStoreFile("lastSeenNotification") },
+              )
             }
           })
     }
