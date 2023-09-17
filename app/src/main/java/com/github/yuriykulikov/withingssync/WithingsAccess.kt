@@ -72,7 +72,15 @@ class WithingsAccess(
   private val redirectUrl = "com.github.yuriykulikov.withingssync://oauth2redirect"
   private val secretKeySpec = SecretKeySpec(secret.encodeToByteArray(), "HmacSHA256")
   private val ktor =
-      HttpClient(CIO) { install(ContentNegotiation) { json(Json { coerceInputValues = true }) } }
+      HttpClient(CIO) {
+        install(ContentNegotiation) {
+          json(
+              Json {
+                coerceInputValues = true
+                ignoreUnknownKeys = true
+              })
+        }
+      }
 
   /**
    * [Learn how to sign requests](https://developer.withings.com/developer-guide/v3/get-access/sign-your-requests/)
